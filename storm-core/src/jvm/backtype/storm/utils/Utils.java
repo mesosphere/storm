@@ -8,7 +8,8 @@ import clojure.lang.IFn;
 import clojure.lang.RT;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.framework.CuratorFrameworkFactory;
-import com.netflix.curator.retry.ExponentialBackoffRetry;
+import com.netflix.curator.retry.RetryNTimes;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.FileOutputStream;
@@ -29,6 +30,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.Arrays;
+
 import org.apache.commons.lang.StringUtils;
 import org.apache.thrift7.TException;
 import org.json.simple.JSONValue;
@@ -142,11 +145,41 @@ public class Utils {
         String commandOptions = System.getProperty("storm.options");
         if(commandOptions != null) {
             commandOptions = commandOptions.replaceAll("%%%%", " ");
+
             String[] configs = commandOptions.split(",");
-            for (String config : configs) {
-                String[] options = config.split("=");
-                if (options.length == 2) {
+            String lastArgKey = null;
+            for (int i = 0; i < configs.length; i++) {
+                if (configs[i].contains("=")) {
+                    // we have a key value pair -> split it
+                    String[] options = configs[i].split("=");
                     ret.put(options[0], options[1]);
+                    lastArgKey = options[0];
+                } else {
+                    // list value, please add to previous full one
+                    ret.put(lastArgKey, ret.get(lastArgKey) + "," + configs[i]);
+                }
+            }
+
+            // If we have a list argument make it an actual list of the right type
+            for (Object key : ret.keySet()) {
+                String[] options = ret.get(key).toString().split(",");
+                if (options.length > 1) {
+                    // make a list out of it otherwise leave it as is
+                    if (StringUtils.isNumeric(options[0])) {
+                        ArrayList nums = new ArrayList<Long>(options.length);
+                        for (String num : options) {
+                            nums.add(Long.parseLong(num));
+                        }
+                        ret.put(key, nums);
+                    } else {
+                        // Fix type of string lists
+                        ret.put(key, Arrays.asList(options));
+        }
+                } else {
+                    // fix type for single value numeric params
+                    if (StringUtils.isNumeric(options[0])) {
+                        ret.put(key, Long.parseLong(options[0]));
+                    }
                 }
             }
         }
@@ -288,7 +321,7 @@ public class Utils {
     public static CuratorFramework newCurator(Map conf, List<String> servers, Object port, String root) {
         return newCurator(conf, servers, port, root, null);
     }
-
+    
     public static class BoundedExponentialBackoffRetry extends ExponentialBackoffRetry {
 
         protected final int maxRetryInterval;
@@ -317,7 +350,7 @@ public class Utils {
         for(String zkServer: (List<String>) servers) {
             serverPorts.add(zkServer + ":" + Utils.getInt(port));
         }
-        String zkStr = StringUtils.join(serverPorts, ",") + root;
+        String zkStr = StringUtils.join(serverPorts, ",") + root; 
         try {
             CuratorFrameworkFactory.Builder builder = CuratorFrameworkFactory.builder()
                     .connectString(zkStr)
@@ -329,7 +362,7 @@ public class Utils {
                                 Utils.getInt(conf.get(Config.STORM_ZOOKEEPER_RETRY_INTERVAL_CEILING))));
             if(auth!=null && auth.scheme!=null) {
                 builder = builder.authorization(auth.scheme, auth.payload);
-            }
+            }            
             return builder.build();
         } catch (IOException e) {
            throw new RuntimeException(e);
