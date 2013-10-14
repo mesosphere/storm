@@ -5,6 +5,7 @@ RELEASE=`cat project.clj | sed '6q;d' | awk '{print $3}' | sed -e 's/\"//' | sed
 echo Making release $RELEASE
 
 DIR=_release/storm-$RELEASE
+LEIN=lein
 
 rm -rf _release
 export LEIN_ROOT=1
@@ -12,8 +13,8 @@ rm *.zip
 rm *jar
 rm -rf lib
 rm -rf classes
-lein1 deps
-lein1 jar
+$LEIN deps
+$LEIN jar
 mkdir -p $DIR
 mkdir $DIR/lib
 cp storm*jar $DIR/
